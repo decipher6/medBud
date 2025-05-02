@@ -9,14 +9,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../services/api';
 import { theme } from '../theme/theme';
-import Animated, { FadeIn, SlideInRight } from 'react-native-reanimated';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import { useAuth } from '../services/authService';
 
 // Temporary user ID - In a real app, this would come from authentication
 const USER_ID = '67ebd559c9003543caba959c';
 
-function MedicationScreen() {
+function MedicationScreen({ navigation }) {
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
   
   const [medications, setMedications] = useState([]);
   const [newMedication, setNewMedication] = useState({
@@ -248,9 +248,8 @@ function MedicationScreen() {
             </Surface>
 
             {medications.map((medication, index) => (
-              <Animated.View 
+              <View 
                 key={medication._id} 
-                entering={SlideInRight.duration(300).delay(index * 100)}
               >
                 <Card style={styles.medicationCard}>
                   <Card.Content>
@@ -301,7 +300,7 @@ function MedicationScreen() {
                     )}
                   </Card.Content>
                 </Card>
-              </Animated.View>
+              </View>
             ))}
           </>
         )}

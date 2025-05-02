@@ -3,7 +3,7 @@ import { View, ScrollView, StyleSheet, RefreshControl, Text, Pressable, AppState
 import { 
   TextInput, Button, Card, Title, Paragraph, Snackbar, 
   ActivityIndicator, Portal, Dialog, Divider, FAB,
-  Chip, Surface, ProgressBar, Badge
+  Chip, Surface, ProgressBar, Badge, IconButton
 } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,7 +11,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 import { api } from '../services/api';
 import { theme } from '../theme/theme';
-import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
+import { useAuth } from '../services/authService';
 
 // Temporary user ID - In a real app, this would come from authentication
 const USER_ID = '67ebd559c9003543caba959c';
@@ -22,7 +22,8 @@ const MAX_DETAILS_WORDS = 500;
 const MAX_RECENT_SYMPTOMS = 10;
 const PENDING_SYMPTOMS_STORAGE_KEY = `pending_symptoms_${USER_ID}`;
 
-function SymptomScreen() {
+function SymptomScreen({ navigation }) {
+  const { user } = useAuth();
   const insets = useSafeAreaInsets();
 
   const [symptoms, setSymptoms] = useState([]);
@@ -469,9 +470,8 @@ function SymptomScreen() {
             </Surface>
 
             {symptoms.map((symptom, index) => (
-              <Animated.View 
+              <View 
                 key={symptom._id} 
-                entering={FadeInDown.duration(300).delay(index * 100)}
               >
                 <Card style={styles.symptomCard}>
                   {symptom.isPending && (
@@ -529,7 +529,7 @@ function SymptomScreen() {
                     )}
                   </Card.Content>
                 </Card>
-              </Animated.View>
+              </View>
             ))}
 
             {isLoading && !isRefreshing && (

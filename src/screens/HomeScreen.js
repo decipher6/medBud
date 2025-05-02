@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, ScrollView, StyleSheet, RefreshControl, TouchableOpacity, Image } from 'react-native';
+import { View, ScrollView, StyleSheet, RefreshControl, TouchableOpacity, Image, TextInput } from 'react-native';
 import { 
   Card, Title, Paragraph, Searchbar, ActivityIndicator, 
-  Snackbar, Button, Text, Chip, Surface, Divider 
+  Snackbar, Button, Text, Chip, Surface, Divider, IconButton 
 } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useIsFocused } from '@react-navigation/native';
@@ -10,7 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { DatePickerModal } from 'react-native-paper-dates';
 import { api } from '../services/api';
 import { theme } from '../theme/theme';
-import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
+import { useAuth } from '../services/authService';
 
 // Temporary user ID - In a real app, this would come from authentication
 const USER_ID = '67ebd559c9003543caba959c';
@@ -18,6 +18,7 @@ const USER_ID = '67ebd559c9003543caba959c';
 function HomeScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const isFocused = useIsFocused();
+  const { user } = useAuth();
   
   const [recentSymptoms, setRecentSymptoms] = useState([]);
   const [medications, setMedications] = useState([]);
@@ -230,222 +231,107 @@ function HomeScreen({ navigation }) {
         />
       }
     >
-      <Animated.View entering={FadeIn.duration(500)} style={styles.header}>
-        <View style={styles.headerContent}>
-          <Image 
-            source={require('../../assets/logo.png')} 
-            style={styles.headerLogo} 
-            resizeMode="contain"
-          />
-          <View>
-            <Text style={styles.welcomeText}>Welcome to</Text>
-            <Text style={styles.appName}>MEDBUD</Text>
-            <Text style={styles.tagline}>Your health tracking companion</Text>
-          </View>
+      <View style={styles.header}>
+        <Text style={styles.greeting}>Hello, {user?.name || 'User'}</Text>
+        <Text style={styles.subtitle}>How are you feeling today?</Text>
+      </View>
+
+      <View style={styles.searchSurface}>
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search symptoms or medications..."
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+        />
+        <IconButton
+          icon="magnify"
+          size={24}
+          onPress={performSearch}
+          style={styles.searchIcon}
+        />
+      </View>
+
+      {searchQuery && (
+        <View style={styles.searchResults}>
+          <Text>Search results will be displayed here</Text>
         </View>
-      </Animated.View>
-
-      <Animated.View entering={FadeInDown.duration(500).delay(100)}>
-        <Surface style={styles.searchSurface}>
-          <Text style={styles.searchTitle}>Find Symptoms</Text>
-          <Searchbar
-            placeholder="Search by name or details..."
-            onChangeText={setSearchQuery}
-            value={searchQuery}
-            style={styles.searchBar}
-            iconColor={theme.colors.primary}
-            onSubmitEditing={performSearch}
-            returnKeyType="search"
-          />
-          
-          <View style={styles.dateFilterContainer}>
-            <TouchableOpacity 
-              onPress={() => setDatePickerVisible(true)}
-              style={styles.dateFilterButton}
-            >
-              <Ionicons name="calendar-outline" size={18} color={theme.colors.primary} />
-              <Text style={styles.dateFilterText} numberOfLines={1}>
-                {startDate && endDate 
-                  ? `${formatDateTime(startDate)} - ${formatDateTime(endDate)}`
-                  : "Filter by date range"}
-              </Text>
-            </TouchableOpacity>
-            
-            {(startDate || endDate) && (
-              <TouchableOpacity 
-                onPress={() => {
-                  setStartDate(null);
-                  setEndDate(null);
-                }}
-                style={styles.clearDateButton}
-              >
-                <Ionicons name="close-circle" size={18} color={theme.colors.error} />
-              </TouchableOpacity>
-            )}
-          </View>
-          
-          <View style={styles.searchActionContainer}>
-            <Button 
-              mode="contained" 
-              style={styles.searchButton}
-              onPress={performSearch}
-              icon="magnify"
-            >
-              Search
-            </Button>
-            
-            {searchPerformed && (
-              <Button 
-                mode="outlined" 
-                style={styles.resetButton}
-                onPress={resetSearch}
-              >
-                Reset
-              </Button>
-            )}
-          </View>
-          
-          {searchError && (
-            <Text style={styles.errorText}>{searchError}</Text>
-          )}
-        </Surface>
-      </Animated.View>
-
-      {searchPerformed && (
-        <Animated.View entering={FadeInDown.duration(500).delay(200)}>
-          <Card style={theme.defaultCardStyle}>
-            <Card.Content>
-              <View style={styles.searchResultsHeader}>
-                <Title style={styles.sectionTitle}>Search Results</Title>
-                {filteredSymptoms.length > 0 && (
-                  <Chip mode="outlined" style={styles.resultCount}>
-                    {filteredSymptoms.length} result{filteredSymptoms.length !== 1 ? 's' : ''}
-                  </Chip>
-                )}
-              </View>
-              
-              {filteredSymptoms.length > 0 ? (
-                filteredSymptoms.map(symptom => (
-                  <View key={symptom._id} style={styles.searchResult}>
-                    <View style={styles.resultHeader}>
-                      <Title style={styles.symptomName}>{symptom.name || 'Unnamed Symptom'}</Title>
-                      <View style={[styles.severityPill, {
-                        backgroundColor: getSeverityColor(symptom.severity)
-                      }]}>
-                        <Text style={styles.severityText}>
-                          {symptom.severity || 'N/A'}/10
-                        </Text>
-                      </View>
-                    </View>
-                    <Paragraph style={styles.dateText}>
-                      {symptom.timestamp ? formatDateTime(symptom.timestamp) : 'N/A'}
-                    </Paragraph>
-                    {symptom.details && (
-                      <Paragraph style={styles.details}>{symptom.details}</Paragraph>
-                    )}
-                    <Divider style={styles.resultDivider} />
-                  </View>
-                ))
-              ) : (
-                <View style={styles.emptyStateContainer}>
-                  <Ionicons name="search" size={48} color={theme.colors.disabled} />
-                  <Text style={styles.noDataMessage}>No matching symptoms found</Text>
-                </View>
-              )}
-            </Card.Content>
-          </Card>
-        </Animated.View>
       )}
 
-      <Animated.View entering={FadeInDown.duration(500).delay(300)}>
-        <Card style={theme.defaultCardStyle}>
-          <Card.Content>
-            <Title style={styles.sectionTitle}>Recent Symptoms</Title>
-            {recentSymptoms.length > 0 ? (
-              recentSymptoms.map((symptom, index) => (
-                <Animated.View 
-                  key={symptom._id} 
-                  entering={FadeInDown.duration(400).delay(100 * index)}
-                  style={styles.symptomItem}
-                >
-                  <View style={styles.resultHeader}>
-                    <Title style={styles.symptomName}>{symptom.name || 'Unnamed Symptom'}</Title>
-                    <View style={[styles.severityPill, {
-                      backgroundColor: getSeverityColor(symptom.severity)
-                    }]}>
-                      <Text style={styles.severityText}>
-                        {symptom.severity || 'N/A'}/10
-                      </Text>
-                    </View>
+      <ScrollView style={styles.content}>
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Recent Symptoms</Text>
+          {recentSymptoms.length > 0 ? (
+            recentSymptoms.map((symptom, index) => (
+              <View key={symptom._id} style={styles.symptomItem}>
+                <View style={styles.resultHeader}>
+                  <Title style={styles.symptomName}>{symptom.name || 'Unnamed Symptom'}</Title>
+                  <View style={[styles.severityPill, {
+                    backgroundColor: getSeverityColor(symptom.severity)
+                  }]}>
+                    <Text style={styles.severityText}>
+                      {symptom.severity || 'N/A'}/10
+                    </Text>
                   </View>
-                  <Paragraph style={styles.dateText}>
-                    {symptom.timestamp ? formatDateTime(symptom.timestamp) : 'N/A'}
-                  </Paragraph>
-                  {symptom.details && (
-                    <Paragraph style={styles.details}>{symptom.details}</Paragraph>
-                  )}
-                  {index < recentSymptoms.length - 1 && <Divider style={styles.itemDivider} />}
-                </Animated.View>
-              ))
-            ) : (
-              <View style={styles.emptyStateContainer}>
-                <Ionicons name="medical-outline" size={48} color={theme.colors.disabled} />
-                <Text style={styles.noDataMessage}>No symptoms recorded yet</Text>
-                <Button 
-                  mode="contained" 
-                  onPress={() => navigation.navigate('Symptoms')}
-                  style={styles.emptyStateButton}
-                >
-                  Log a symptom
-                </Button>
+                </View>
+                <Paragraph style={styles.dateText}>
+                  {symptom.timestamp ? formatDateTime(symptom.timestamp) : 'N/A'}
+                </Paragraph>
+                {symptom.details && (
+                  <Paragraph style={styles.details}>{symptom.details}</Paragraph>
+                )}
+                {index < recentSymptoms.length - 1 && <Divider style={styles.itemDivider} />}
               </View>
-            )}
-          </Card.Content>
-        </Card>
-      </Animated.View>
+            ))
+          ) : (
+            <View style={styles.emptyStateContainer}>
+              <Ionicons name="medical-outline" size={48} color={theme.colors.disabled} />
+              <Text style={styles.noDataMessage}>No symptoms recorded yet</Text>
+              <Button 
+                mode="contained" 
+                onPress={() => navigation.navigate('Symptoms')}
+                style={styles.emptyStateButton}
+              >
+                Log a symptom
+              </Button>
+            </View>
+          )}
+        </View>
 
-      <Animated.View entering={FadeInDown.duration(500).delay(400)}>
-        <Card style={theme.defaultCardStyle}>
-          <Card.Content>
-            <Title style={styles.sectionTitle}>Your Medications</Title>
-            {medications.length > 0 ? (
-              medications.map((med, index) => (
-                <Animated.View 
-                  key={med._id} 
-                  entering={FadeInDown.duration(400).delay(100 * index)}
-                  style={styles.medicationItem}
-                >
-                  <Title style={styles.medicationName}>{med.name || 'Unnamed Medication'}</Title>
-                  <View style={styles.medicationDetails}>
-                    <Chip icon="repeat" style={styles.medicationChip}>
-                      {med.frequency} times per day
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Recent Medications</Text>
+          {medications.length > 0 ? (
+            medications.map((med, index) => (
+              <View key={med._id} style={styles.medicationItem}>
+                <Title style={styles.medicationName}>{med.name || 'Unnamed Medication'}</Title>
+                <View style={styles.medicationDetails}>
+                  <Chip icon="repeat" style={styles.medicationChip}>
+                    {med.frequency} times per day
+                  </Chip>
+                  {med.times && med.times.length > 0 && (
+                    <Chip icon="clock" style={styles.medicationChip}>
+                      {med.times.join(', ')}
                     </Chip>
-                    {med.times && med.times.length > 0 && (
-                      <Chip icon="clock" style={styles.medicationChip}>
-                        {med.times.join(', ')}
-                      </Chip>
-                    )}
-                  </View>
-                  {med.notes && <Paragraph style={styles.details}>Notes: {med.notes}</Paragraph>}
-                  {index < medications.length - 1 && <Divider style={styles.itemDivider} />}
-                </Animated.View>
-              ))
-            ) : (
-              <View style={styles.emptyStateContainer}>
-                <Ionicons name="medkit-outline" size={48} color={theme.colors.disabled} />
-                <Text style={styles.noDataMessage}>No medications added yet</Text>
-                <Button 
-                  mode="contained" 
-                  onPress={() => navigation.navigate('Medications')}
-                  style={styles.emptyStateButton}
-                >
-                  Add medication
-                </Button>
+                  )}
+                </View>
+                {med.notes && <Paragraph style={styles.details}>Notes: {med.notes}</Paragraph>}
+                {index < medications.length - 1 && <Divider style={styles.itemDivider} />}
               </View>
-            )}
-          </Card.Content>
-        </Card>
-      </Animated.View>
+            ))
+          ) : (
+            <View style={styles.emptyStateContainer}>
+              <Ionicons name="medkit-outline" size={48} color={theme.colors.disabled} />
+              <Text style={styles.noDataMessage}>No medications added yet</Text>
+              <Button 
+                mode="contained" 
+                onPress={() => navigation.navigate('Medications')}
+                style={styles.emptyStateButton}
+              >
+                Add medication
+              </Button>
+            </View>
+          )}
+        </View>
+      </ScrollView>
 
       <DatePickerModal
         locale="en"
@@ -483,123 +369,54 @@ const styles = StyleSheet.create({
   header: {
     marginBottom: theme.spacing.md,
   },
-  headerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.roundness,
-    padding: theme.spacing.md,
-    ...theme.shadows.medium,
-  },
-  headerLogo: {
-    width: 60,
-    height: 60,
-    marginRight: theme.spacing.md,
-  },
-  welcomeText: {
+  greeting: {
     ...theme.typography.medium,
     color: theme.colors.disabled,
   },
-  appName: {
-    ...theme.typography.h1,
-    color: theme.colors.primary,
-    letterSpacing: 1,
-  },
-  tagline: {
+  subtitle: {
     ...theme.typography.body2,
     color: theme.colors.disabled,
   },
   searchSurface: {
+    flexDirection: 'row',
+    alignItems: 'center',
     padding: theme.spacing.md,
     borderRadius: theme.roundness,
     marginBottom: theme.spacing.md,
     ...theme.shadows.small,
   },
-  searchTitle: {
-    ...theme.typography.h3,
-    marginBottom: theme.spacing.sm,
-    color: theme.colors.text,
-  },
-  searchBar: {
-    marginBottom: theme.spacing.sm,
+  searchInput: {
+    flex: 1,
+    padding: theme.spacing.sm,
     backgroundColor: theme.colors.background,
     elevation: 0,
     borderWidth: 1,
     borderColor: theme.colors.divider,
   },
-  dateFilterContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: theme.spacing.sm,
-  },
-  dateFilterButton: {
-    backgroundColor: theme.colors.background,
-    borderRadius: theme.roundness / 2,
-    padding: theme.spacing.sm,
-    borderWidth: 1,
-    borderColor: theme.colors.divider,
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  dateFilterText: {
-    ...theme.typography.body2,
-    color: theme.colors.text,
+  searchIcon: {
     marginLeft: theme.spacing.sm,
   },
-  clearDateButton: {
-    marginLeft: theme.spacing.sm,
-    padding: theme.spacing.xs,
+  searchResults: {
+    padding: theme.spacing.md,
   },
-  searchActionContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  content: {
+    padding: theme.spacing.md,
   },
-  searchButton: {
-    flex: 3,
-    marginRight: searchPerformed => searchPerformed ? theme.spacing.sm : 0,
-  },
-  resetButton: {
-    flex: 1,
-    borderColor: theme.colors.primary,
-  },
-  errorText: {
-    color: theme.colors.error,
-    ...theme.typography.caption,
-    marginTop: theme.spacing.sm,
-  },
-  searchResultsHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  section: {
     marginBottom: theme.spacing.md,
   },
   sectionTitle: {
     ...theme.typography.h3,
     color: theme.colors.text,
-  },
-  resultCount: {
-    backgroundColor: theme.colors.surface,
-  },
-  searchResult: {
     marginBottom: theme.spacing.sm,
   },
-  resultDivider: {
-    marginTop: theme.spacing.md,
-    backgroundColor: theme.colors.divider,
+  symptomItem: {
+    marginBottom: theme.spacing.sm,
   },
   resultHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-  },
-  symptomItem: {
-    marginBottom: theme.spacing.sm,
-  },
-  itemDivider: {
-    marginVertical: theme.spacing.sm,
-    backgroundColor: theme.colors.divider,
   },
   symptomName: {
     ...theme.typography.medium,

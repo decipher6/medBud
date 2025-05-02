@@ -1,34 +1,26 @@
 import React from 'react';
 import { View, Image, StyleSheet, Text } from 'react-native';
 import { Button } from 'react-native-paper';
-import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 import { theme } from '../theme/theme';
 
 function SplashScreen({ navigation }) {
   return (
     <View style={styles.container}>
-      <Animated.View entering={FadeIn.duration(600)} style={styles.content}>
-        <Animated.Image
-          entering={FadeInDown.duration(600).delay(200)}
+      <View style={styles.content}>
+        <Image
           source={require('../../assets/logo.png')}
           style={styles.logo}
           resizeMode="contain"
           accessibilityLabel="Medbud logo"
         />
-        <Animated.Text
-          entering={FadeInDown.duration(600).delay(400)}
-          style={styles.title}
-        >
+        <Text style={styles.title}>
           Medbud
-        </Animated.Text>
-        <Animated.Text
-          entering={FadeInDown.duration(600).delay(600)}
-          style={styles.tagline}
-        >
+        </Text>
+        <Text style={styles.tagline}>
           Personal nurse right in your pocket
-        </Animated.Text>
-      </Animated.View>
-      <Animated.View entering={FadeInDown.duration(600).delay(800)}>
+        </Text>
+      </View>
+      <View>
         <Button
           mode="contained"
           onPress={() => navigation.navigate('Auth')}
@@ -39,7 +31,7 @@ function SplashScreen({ navigation }) {
         >
           Get Started
         </Button>
-      </Animated.View>
+      </View>
     </View>
   );
 }

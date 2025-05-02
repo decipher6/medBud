@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, Image, ScrollView, TouchableOpacity } from 'react-native';
 import { 
   Button, Card, Title, Paragraph, Divider, Text,
-  ActivityIndicator, Snackbar, Surface, Chip
+  ActivityIndicator, Snackbar, Surface, Chip, IconButton
 } from 'react-native-paper';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,7 +10,7 @@ import { DatePickerModal } from 'react-native-paper-dates';
 import NetInfo from '@react-native-community/netinfo';
 import { api } from '../services/api';
 import { theme } from '../theme/theme';
-import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
+import { useAuth } from '../services/authService';
 
 // Use require for the logo
 const logoImage = require('../../assets/logo.png');
@@ -36,7 +36,8 @@ const fonts = {
   }
 };
 
-function ReportScreen() {
+function ReportScreen({ navigation }) {
+  const { user } = useAuth();
   const insets = useSafeAreaInsets();
   
   const [startDate, setStartDate] = useState('');
@@ -48,6 +49,7 @@ function ReportScreen() {
   const [logoDataUrl, setLogoDataUrl] = useState(null);
   const [datePickerVisible, setDatePickerVisible] = useState(false);
   const [isOnline, setIsOnline] = useState(true);
+  const [reports, setReports] = useState([]);
 
   // Setup network state listeners
   useEffect(() => {
@@ -420,179 +422,32 @@ function ReportScreen() {
   };
 
   return (
-    <ScrollView 
-      style={[styles.container, { paddingTop: insets.top }]}
-      contentContainerStyle={styles.contentContainer}
-    >
-      {!isOnline && (
-        <Animated.View entering={FadeIn.duration(400)}>
-          <Surface style={styles.offlineBanner}>
-            <Ionicons name="cloud-offline" size={18} color="#fff" />
-            <Text style={styles.offlineText}>You are offline</Text>
-          </Surface>
-        </Animated.View>
-      )}
+    <View style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.title}>Your Reports</Text>
+        <IconButton
+          icon="refresh"
+          size={24}
+          onPress={() => {}}
+        />
+      </View>
 
-      {error && (
-        <Animated.View entering={FadeIn.duration(400)}>
-          <Card style={[styles.errorCard]}>
-            <Card.Content>
-              <View style={styles.errorContent}>
-                <Ionicons name="alert-circle" size={24} color={theme.colors.error} />
-                <Text style={styles.errorText}>{error}</Text>
-              </View>
-            </Card.Content>
-          </Card>
-        </Animated.View>
-      )}
-
-      <Animated.View entering={FadeIn.duration(500)}>
-        <Surface style={styles.headerCard}>
-          <View style={styles.headerContent}>
-            <Image 
-              source={logoImage} 
-              style={styles.headerLogo} 
-              resizeMode="contain"
-            />
-            <View>
-              <Text style={styles.headerTitle}>Health Reports</Text>
-              <Text style={styles.headerSubtitle}>
-                Get AI-generated insights about your health
-              </Text>
-            </View>
+      <ScrollView style={styles.content}>
+        {reports.map((report) => (
+          <View key={report._id} style={styles.reportCard}>
+            <Card>
+              <Card.Content>
+                <Text style={styles.reportTitle}>{report.title}</Text>
+                <Text style={styles.reportDate}>
+                  {new Date(report.date).toLocaleDateString()}
+                </Text>
+                <Text style={styles.reportSummary}>{report.summary}</Text>
+              </Card.Content>
+            </Card>
           </View>
-        </Surface>
-      </Animated.View>
-
-      <Animated.View entering={FadeInDown.duration(500).delay(100)}>
-        <Card style={styles.card}>
-          <Card.Content>
-            <Title style={styles.cardTitle}>Generate Health Report</Title>
-            <Text style={styles.cardSubtitle}>
-              Select a date range to generate a comprehensive health report
-            </Text>
-            
-            <TouchableOpacity 
-              style={styles.dateSelector}
-              onPress={() => setDatePickerVisible(true)}
-            >
-              <View style={styles.dateSelectorContent}>
-                <Ionicons name="calendar" size={24} color={theme.colors.primary} />
-                <View style={styles.dateTextContainer}>
-                  <Text style={styles.dateLabel}>Date Range</Text>
-                  <Text style={styles.dateValue}>
-                    {startDate || endDate ? 
-                      `${formatDisplayDate(startDate) || 'All'} to ${formatDisplayDate(endDate) || 'Present'}` : 
-                      'Select dates (optional)'}
-                  </Text>
-                </View>
-              </View>
-              <Ionicons name="chevron-forward" size={24} color={theme.colors.disabled} />
-            </TouchableOpacity>
-            
-            <Text style={styles.dateNote}>
-              Note: If no dates are selected, the report will include data from the last 30 days
-            </Text>
-            
-            <Button 
-              mode="contained" 
-              onPress={generateReport} 
-              loading={isLoading}
-              disabled={isLoading}
-              style={styles.generateButton}
-              icon="file-document-outline"
-              contentStyle={styles.buttonContent}
-            >
-              Generate Report
-            </Button>
-          </Card.Content>
-        </Card>
-      </Animated.View>
-
-      {report && (
-        <Animated.View entering={FadeInDown.duration(500).delay(200)}>
-          <Card style={styles.reportCard}>
-            <Card.Content>
-              <View style={styles.reportHeader}>
-                <View>
-                  <Title style={styles.reportTitle}>Health Report</Title>
-                  <Text style={styles.reportDate}>
-                    Generated on: {report.generatedAt.toLocaleDateString('en-US', {
-                      year: 'numeric',
-                      month: 'short',
-                      day: 'numeric'
-                    })}
-                  </Text>
-                </View>
-                <Button 
-                  mode="contained" 
-                  onPress={exportToPdf}
-                  loading={isPdfExporting}
-                  disabled={isPdfExporting}
-                  icon="download"
-                  compact
-                  style={styles.exportButton}
-                  labelStyle={styles.exportButtonLabel}
-                >
-                  Export PDF
-                </Button>
-              </View>
-              
-              <Divider style={styles.divider} />
-              
-              {report.content.map((section, index) => {
-                // Extract title and content from section
-                const lines = section.content.split('\n');
-                const title = lines[0];
-                const content = lines.slice(1).join('\n');
-                
-                return (
-                  <Animated.View 
-                    key={section.id} 
-                    entering={FadeInDown.duration(400).delay(300 + (index * 100))}
-                    style={styles.section}
-                  >
-                    {index > 0 && <Divider style={styles.sectionDivider} />}
-                    <View style={styles.sectionTitleContainer}>
-                      <View style={styles.sectionTitleBar} />
-                      <Text style={styles.sectionTitle}>{title}</Text>
-                    </View>
-                    <Text style={styles.reportContent}>
-                      {content}
-                    </Text>
-                  </Animated.View>
-                );
-              })}
-            </Card.Content>
-          </Card>
-        </Animated.View>
-      )}
-
-      <DatePickerModal
-        locale="en"
-        mode="range"
-        visible={datePickerVisible}
-        onDismiss={onDismissDatePicker}
-        startDate={startDate ? new Date(startDate) : undefined}
-        endDate={endDate ? new Date(endDate) : undefined}
-        onConfirm={onConfirmDatePicker}
-        saveLabel="Confirm"
-        startLabel="Start date"
-        endLabel="End date"
-      />
-
-      <Snackbar
-        visible={!!error}
-        onDismiss={() => setError(null)}
-        action={{
-          label: 'Dismiss',
-          onPress: () => setError(null),
-        }}
-        style={styles.snackbar}
-      >
-        {error}
-      </Snackbar>
-    </ScrollView>
+        ))}
+      </ScrollView>
+    </View>
   );
 }
 
@@ -601,114 +456,24 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f5f5f5',
   },
-  contentContainer: {
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: theme.spacing.md,
+  },
+  title: {
+    ...theme.typography.h3,
+    color: theme.colors.primary,
+  },
+  content: {
     padding: theme.spacing.md,
     paddingBottom: theme.spacing.xl,
   },
-  headerCard: {
-    marginBottom: theme.spacing.md,
-    borderRadius: theme.roundness,
-    backgroundColor: theme.colors.surface,
-    ...theme.shadows.small,
-  },
-  headerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: theme.spacing.md,
-  },
-  headerLogo: {
-    width: 48,
-    height: 48,
-    marginRight: theme.spacing.md,
-  },
-  headerTitle: {
-    ...theme.typography.h3,
-    color: theme.colors.primary,
-  },
-  headerSubtitle: {
-    ...theme.typography.body2,
-    color: theme.colors.disabled,
-  },
-  card: {
-    borderRadius: theme.roundness,
-    marginBottom: theme.spacing.md,
-    backgroundColor: theme.colors.background,
-    ...theme.shadows.medium,
-  },
-  errorCard: {
-    backgroundColor: '#FFEBEE',
-    borderRadius: theme.roundness,
-    marginBottom: theme.spacing.md,
-    ...theme.shadows.small,
-  },
-  errorContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  errorText: {
-    color: theme.colors.error,
-    ...theme.typography.body2,
-    marginLeft: theme.spacing.sm,
-    flex: 1,
-  },
-  cardTitle: {
-    ...theme.typography.h3,
-    color: theme.colors.text,
-    marginBottom: theme.spacing.xs,
-  },
-  cardSubtitle: {
-    ...theme.typography.body2,
-    color: theme.colors.disabled,
-    marginBottom: theme.spacing.md,
-  },
-  dateSelector: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: theme.spacing.md,
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.roundness / 2,
-    marginBottom: theme.spacing.sm,
-    ...theme.shadows.small,
-  },
-  dateSelectorContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  dateTextContainer: {
-    marginLeft: theme.spacing.md,
-  },
-  dateLabel: {
-    ...theme.typography.caption,
-    color: theme.colors.primary,
-    marginBottom: 2,
-  },
-  dateValue: {
-    ...theme.typography.body2,
-    color: theme.colors.text,
-  },
-  dateNote: {
-    ...theme.typography.caption,
-    color: theme.colors.disabled,
-    fontStyle: 'italic',
-    marginBottom: theme.spacing.md,
-  },
-  generateButton: {
-    marginTop: theme.spacing.sm,
-  },
-  buttonContent: {
-    paddingVertical: theme.spacing.sm,
-  },
   reportCard: {
+    marginBottom: theme.spacing.md,
     borderRadius: theme.roundness,
     backgroundColor: theme.colors.background,
     ...theme.shadows.medium,
-  },
-  reportHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: theme.spacing.sm,
   },
   reportTitle: {
     ...theme.typography.h3,
@@ -718,62 +483,9 @@ const styles = StyleSheet.create({
     ...theme.typography.caption,
     color: theme.colors.disabled,
   },
-  exportButton: {
-    backgroundColor: theme.colors.secondary,
-  },
-  exportButtonLabel: {
-    ...theme.typography.caption,
-    fontWeight: 'bold',
-  },
-  divider: {
-    backgroundColor: theme.colors.divider,
-    marginVertical: theme.spacing.md,
-  },
-  section: {
-    marginBottom: theme.spacing.lg,
-  },
-  sectionDivider: {
-    backgroundColor: theme.colors.divider,
-    marginVertical: theme.spacing.md,
-  },
-  sectionTitleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: theme.spacing.sm,
-  },
-  sectionTitleBar: {
-    width: 4,
-    height: 20,
-    backgroundColor: theme.colors.secondary,
-    borderRadius: 2,
-    marginRight: theme.spacing.sm,
-  },
-  sectionTitle: {
-    ...theme.typography.h3,
-    fontSize: 18,
-    color: theme.colors.text,
-  },
-  reportContent: {
+  reportSummary: {
     ...theme.typography.body2,
     color: theme.colors.text,
-    lineHeight: 22,
-  },
-  snackbar: {
-    backgroundColor: theme.colors.error,
-  },
-  offlineBanner: {
-    backgroundColor: theme.colors.error,
-    padding: theme.spacing.sm,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: theme.spacing.sm,
-    borderRadius: theme.roundness,
-  },
-  offlineText: {
-    color: '#fff',
-    ...theme.typography.medium,
-    marginLeft: theme.spacing.xs,
   },
 });
 
