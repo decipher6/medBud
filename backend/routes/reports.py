@@ -83,23 +83,23 @@ def generate_report(
         Always organize the report using these exact sections and format:
 
         ### HEALTH SUMMARY
-        [A concise 2-3 sentence overview of the patient's health during this period]
+        [Overview of the patient's health during this period]
 
         ### SYMPTOM PATTERNS
-        [List symptoms with severity patterns]
+        [List symptoms in the exact same manner with severity patterns]
 
         ### MEDICATION REVIEW
         [Summarize medication usage]
 
         ### CORRELATIONS
-        [Note any correlations between symptoms and medications]
+        [Note any correlations between symptoms and medications, if there are no clear ones you don't have to put much here]
 
         ### RECOMMENDATIONS
         [General health recommendations]
 
         FORMAT REQUIREMENTS:
         - Each section title must be preceded by exactly three # symbols (### )
-        - Keep paragraphs short and clear (2-4 sentences each)
+        - Keep paragraphs short and clear.
         - Use plain language and avoid medical jargon
         - Do not use complex markdown formatting, just basic section headers
         - Be objective and factual in your assessment
