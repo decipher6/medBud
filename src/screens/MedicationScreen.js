@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ScrollView, StyleSheet, Alert, View, Pressable, Platform } from 'react-native';
+import { ScrollView, StyleSheet, Alert, View, Pressable, Platform, TouchableOpacity, FlatList } from 'react-native';
 import { 
   TextInput, Button, Card, Title, Paragraph, IconButton, 
   Snackbar, Portal, Dialog, ActivityIndicator, FAB,
@@ -13,24 +13,18 @@ import { useContext } from 'react';
 import { UserContext } from '../../App';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { NotificationService } from '../services/notifications';
+import { webNotificationService } from '../services/WebNotificationService';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useMedication } from '../context/MedicationContext';
+import { EventRegister } from 'react-native-event-listeners';
 
 function MedicationScreen() {
   const insets = useSafeAreaInsets();
-  const { getUserId } = useContext(UserContext);
-  
-  // Function to safely get the user ID with a fallback
-  const getUserIdSafe = () => {
-    const userId = getUserId();
-    return userId || '67ebd559c9003543caba959c'; // Fallback for development only
-  };
-
-  // Create a key for the pending medications that's specific to the user
-  const getPendingMedicationStorageKey = () => {
-    const userId = getUserIdSafe();
-    return `pending_medications_${userId}`;
-  };
-  
+  const { user } = useContext(UserContext);
+  const { medicationStatuses, updateMedicationStatus } = useMedication();
   const [medications, setMedications] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [newMedication, setNewMedication] = useState({
     name: '',
     frequency: 1,
@@ -45,30 +39,88 @@ function MedicationScreen() {
   const [inputErrors, setInputErrors] = useState({});
   const [showTimePicker, setShowTimePicker] = useState(null);
 
-  useEffect(() => {
-    loadMedications();
-  }, []);
-
+  // Load medications and their statuses
   const loadMedications = async () => {
     try {
-      setIsLoading(true);
-      const userId = getUserIdSafe();
-      
-      if (!userId) {
-        setError('User ID not available. Please log in again.');
-        setMedications([]);
-        return;
-      }
-      
-      const medicationsData = await api.getMedications(userId);
-      setMedications(medicationsData);
+      setLoading(true);
+      const data = await api.getMedications(user.id);
+      setMedications(data);
     } catch (error) {
       console.error('Error loading medications:', error);
-      setError('Failed to load medications. Please try again.');
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
+
+  // Load medication statuses from AsyncStorage
+  const loadMedicationStatuses = async () => {
+    try {
+      const statuses = {};
+      for (const medication of medications) {
+        const key = `medication_status_${medication._id}`;
+        const statusData = await AsyncStorage.getItem(key);
+        if (statusData) {
+          const { status, updatedAt } = JSON.parse(statusData);
+          statuses[medication._id] = { status, updatedAt };
+        }
+      }
+      // Update all statuses in the context
+      Object.entries(statuses).forEach(([medicationId, statusData]) => {
+        updateMedicationStatus(medicationId, statusData.status);
+      });
+    } catch (error) {
+      console.error('Error loading medication statuses:', error);
+    }
+  };
+
+  // Handle status updates
+  const handleUpdateMedicationStatus = async (medicationId, status) => {
+    try {
+      // Update status in context
+      await updateMedicationStatus(medicationId, status);
+      
+      // Store status locally
+      const key = `medication_status_${medicationId}`;
+      const statusData = {
+        status,
+        updatedAt: new Date().toISOString()
+      };
+      await AsyncStorage.setItem(key, JSON.stringify(statusData));
+      
+      // Refresh medications to ensure UI is up to date
+      await loadMedications();
+    } catch (error) {
+      console.error('Error updating medication status:', error);
+    }
+  };
+
+  // Load medications and statuses on mount and when user changes
+  useEffect(() => {
+    if (user?.id) {
+      loadMedications();
+    }
+  }, [user?.id]);
+
+  // Load statuses when medications change
+  useEffect(() => {
+    if (medications.length > 0) {
+      loadMedicationStatuses();
+    }
+  }, [medications]);
+
+  // Add this effect to listen for medication status updates from notifications
+  useEffect(() => {
+    const handleMedicationStatusUpdate = (event) => {
+      const { medicationId, status } = event.detail;
+      handleUpdateMedicationStatus(medicationId, status);
+    };
+
+    window.addEventListener('medicationStatusUpdate', handleMedicationStatusUpdate);
+
+    return () => {
+      window.removeEventListener('medicationStatusUpdate', handleMedicationStatusUpdate);
+    };
+  }, []);
 
   const validateMedication = (medication) => {
     const errors = {};
@@ -95,13 +147,13 @@ function MedicationScreen() {
       setInputErrors(validationErrors);
       return;
     }
-
+  
     try {
       setIsLoading(true);
       setError(null);
       setInputErrors({});
-
-      const userId = getUserIdSafe();
+  
+      const userId = user.id;
       const medicationData = {
         user_id: userId,
         name: newMedication.name.trim(),
@@ -109,14 +161,19 @@ function MedicationScreen() {
         times: newMedication.times.map(time => time.trim()),
         notes: newMedication.notes.trim() || ''
       };
-
+  
       const response = await api.createMedication(medicationData);
       
       // Schedule notifications for the new medication
-      if (Platform.OS !== 'web') {
-        await NotificationService.scheduleMedicationReminder(response);
+      if (Platform.OS === 'web') {
+        await webNotificationService.scheduleMedicationReminder(response);
+      } else if (Platform.OS !== 'web') {
+        // For non-web platforms, use the existing NotificationService if available
+        if (typeof NotificationService !== 'undefined') {
+          await NotificationService.scheduleMedicationReminder(response);
+        }
       }
-
+  
       await loadMedications();
       setNewMedication({ name: '', frequency: 1, times: [''], notes: '' });
       setShowAddDialog(false);
@@ -147,32 +204,40 @@ function MedicationScreen() {
       setInputErrors(validationErrors);
       return;
     }
-
+  
     try {
       setIsLoading(true);
       setError(null);
       setInputErrors({});
-
-      const userId = getUserIdSafe();
+  
+      const userId = user.id;
       const medicationData = {
         name: editingMedication.name.trim(),
         frequency: editingMedication.frequency,
         times: editingMedication.times.map(time => time.trim()),
         notes: editingMedication.notes.trim() || ''
       };
-
+  
       // Cancel existing notifications
-      if (Platform.OS !== 'web') {
-        await NotificationService.cancelMedicationNotifications(editingMedication._id);
+      if (Platform.OS === 'web') {
+        await webNotificationService.cancelMedicationNotifications(editingMedication._id);
+      } else if (Platform.OS !== 'web') {
+        if (typeof NotificationService !== 'undefined') {
+          await NotificationService.cancelMedicationNotifications(editingMedication._id);
+        }
       }
-
+  
       const response = await api.updateMedication(editingMedication._id, medicationData, userId);
       
       // Schedule new notifications
-      if (Platform.OS !== 'web') {
-        await NotificationService.scheduleMedicationReminder(response);
+      if (Platform.OS === 'web') {
+        await webNotificationService.scheduleMedicationReminder(response);
+      } else if (Platform.OS !== 'web') {
+        if (typeof NotificationService !== 'undefined') {
+          await NotificationService.scheduleMedicationReminder(response);
+        }
       }
-
+  
       await loadMedications();
       setShowEditDialog(false);
       setEditingMedication(null);
@@ -200,12 +265,22 @@ function MedicationScreen() {
             try {
               setIsLoading(true);
               setError(null);
-              const userId = getUserIdSafe();
+              const userId = user.id;
               
               // Cancel notifications before deleting
-              if (Platform.OS !== 'web') {
-                await NotificationService.cancelMedicationNotifications(medicationId);
+              if (Platform.OS === 'web') {
+                await webNotificationService.cancelMedicationNotifications(medicationId);
+              } else if (Platform.OS !== 'web') {
+                if (typeof NotificationService !== 'undefined') {
+                  await NotificationService.cancelMedicationNotifications(medicationId);
+                }
               }
+              
+              // Also remove from local status tracking
+              const newStatuses = {...medicationStatuses};
+              delete newStatuses[medicationId];
+              updateMedicationStatus(medicationId, null);
+              await loadMedicationStatuses();
               
               await api.deleteMedication(medicationId, userId);
               await loadMedications();
@@ -257,7 +332,22 @@ function MedicationScreen() {
     );
   };
 
-  if (isLoading && !medications.length) {
+  const getMedicationStatus = (medicationId) => {
+    return medicationStatuses[medicationId]?.status || null;
+  };
+
+  const getMedicationStatusUpdateTime = (medicationId) => {
+    return medicationStatuses[medicationId]?.updatedAt || null;
+  };
+
+  const getStatusColor = (status) => {
+    if (!status) return null;
+    return status === 'taken' 
+      ? theme.colors.success || '#4CAF50' 
+      : theme.colors.error;
+  };
+
+  if (loading && !medications.length) {
     return (
       <View style={[styles.loadingContainer, {paddingTop: insets.top}]}>
         <ActivityIndicator size="large" color={theme.colors.primary} />
@@ -269,21 +359,8 @@ function MedicationScreen() {
   return (
     <View style={[styles.container, {paddingBottom: insets.bottom}]}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        {medications.length === 0 ? (
-          <View style={styles.emptyStateContainer}>
-            <Ionicons name="medkit-outline" size={64} color={theme.colors.disabled} />
-            <Text style={styles.emptyStateText}>
-              You haven't added any medications yet
-            </Text>
-            <Button 
-              mode="contained" 
-              onPress={() => setShowAddDialog(true)} 
-              style={styles.emptyStateButton}
-              icon="plus"
-            >
-              Add Your First Medication
-            </Button>
-          </View>
+        {loading ? (
+          <ActivityIndicator size="large" color={theme.colors.primary} />
         ) : (
           <>
             <Surface style={styles.headerCard}>
@@ -293,59 +370,123 @@ function MedicationScreen() {
               </Text>
             </Surface>
 
-            {medications.map((medication, index) => (
-              <View key={medication._id}>
-                <Card style={styles.medicationCard}>
-                  <Card.Content>
-                    <View style={styles.cardHeader}>
-                      <Title style={styles.medicationName}>{medication.name}</Title>
-                      <View style={styles.cardActions}>
-                        <IconButton
-                          icon="pencil"
-                          iconColor={theme.colors.primary}
-                          size={20}
-                          onPress={() => startEditing(medication)}
-                          style={styles.actionButton}
-                        />
-                        <IconButton
-                          icon="delete"
-                          iconColor={theme.colors.error}
-                          size={20}
-                          onPress={() => deleteMedication(medication._id, medication.name)}
-                          style={styles.actionButton}
-                        />
-                      </View>
-                    </View>
-                    
-                    <Divider style={styles.divider} />
-                    
-                    <View style={styles.medInfoRow}>
-                      <Ionicons name="fitness-outline" size={20} color={theme.colors.primary} />
-                      <Text style={styles.medInfoLabel}>Frequency:</Text>
-                      <Text style={styles.medInfoValue}>{medication.frequency || 1} times per day</Text>
-                    </View>
-                    
-                    {medication.times && medication.times.length > 0 && (
-                      <View style={styles.timeInputsContainer}>
-                        <Text style={styles.timeInputsLabel}>Reminder Times:</Text>
-                        {medication.times.map((time, index) => (
-                          <View key={index} style={styles.timeInputRow}>
-                            <Text style={styles.timeInput}>{time}</Text>
+            <FlatList
+              data={medications}
+              keyExtractor={(item) => item._id.toString()}
+              renderItem={({ item }) => {
+                const status = getMedicationStatus(item._id);
+                const statusUpdateTime = getMedicationStatusUpdateTime(item._id);
+                return (
+                  <View key={item._id}>
+                    <Card style={[
+                      styles.medicationCard,
+                      status === 'taken' && styles.medicationCardTaken,
+                      status === 'not_taken' && styles.medicationCardNotTaken
+                    ]}>
+                      <Card.Content>
+                        <View style={styles.cardHeader}>
+                          <Title style={styles.medicationName}>{item.name}</Title>
+                          <View style={styles.cardActions}>
+                            <View style={styles.statusButtonsContainer}>
+                              <TouchableOpacity
+                                style={[
+                                  styles.statusButton,
+                                  status === 'taken' && styles.statusButtonActive
+                                ]}
+                                onPress={() => handleUpdateMedicationStatus(item._id, 'taken')}
+                              >
+                                <Ionicons 
+                                  name="checkmark" 
+                                  size={18} 
+                                  color={status === 'taken' ? '#fff' : theme.colors.success || '#4CAF50'} 
+                                />
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                style={[
+                                  styles.statusButton,
+                                  status === 'not_taken' && styles.statusButtonNotTaken
+                                ]}
+                                onPress={() => handleUpdateMedicationStatus(item._id, 'not_taken')}
+                              >
+                                <Ionicons 
+                                  name="close" 
+                                  size={18} 
+                                  color={status === 'not_taken' ? '#fff' : theme.colors.error} 
+                                />
+                              </TouchableOpacity>
+                            </View>
+                            <IconButton
+                              icon="pencil"
+                              iconColor={theme.colors.primary}
+                              size={20}
+                              onPress={() => startEditing(item)}
+                              style={styles.actionButton}
+                            />
+                            <IconButton
+                              icon="delete"
+                              iconColor={theme.colors.error}
+                              size={20}
+                              onPress={() => deleteMedication(item._id, item.name)}
+                              style={styles.actionButton}
+                            />
                           </View>
-                        ))}
-                      </View>
-                    )}
-                    
-                    {medication.notes && (
-                      <View style={styles.notesContainer}>
-                        <Text style={styles.notesLabel}>Notes:</Text>
-                        <Text style={styles.notesText}>{medication.notes}</Text>
-                      </View>
-                    )}
-                  </Card.Content>
-                </Card>
-              </View>
-            ))}
+                        </View>
+                        
+                        {status && (
+                          <View style={[
+                            styles.statusIndicator, 
+                            { backgroundColor: getStatusColor(status) }
+                          ]}>
+                            <Ionicons 
+                              name={status === 'taken' ? 'checkmark' : 'close'} 
+                              size={14} 
+                              color="#fff" 
+                            />
+                            <Text style={styles.statusText}>
+                              {status === 'taken' ? 'Taken' : 'Not Taken'}
+                            </Text>
+                            {statusUpdateTime && (
+                              <Text style={styles.statusTimeText}>
+                                {new Date(statusUpdateTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                              </Text>
+                            )}
+                          </View>
+                        )}
+                        
+                        <Divider style={styles.divider} />
+                        
+                        <View style={styles.medInfoRow}>
+                          <Ionicons name="fitness-outline" size={20} color={theme.colors.primary} />
+                          <Text style={styles.medInfoLabel}>Frequency:</Text>
+                          <Text style={styles.medInfoValue}>{item.frequency || 1} times per day</Text>
+                        </View>
+                        
+                        {item.times && item.times.length > 0 && (
+                          <View style={styles.timeInputsContainer}>
+                            <Text style={styles.timeInputsLabel}>Reminder Times:</Text>
+                            {item.times.map((time, index) => (
+                              <View key={index} style={styles.timeInputRow}>
+                                <Text style={styles.timeInput}>{time}</Text>
+                              </View>
+                            ))}
+                          </View>
+                        )}
+                        
+                        {item.notes && (
+                          <View style={styles.notesContainer}>
+                            <Text style={styles.notesLabel}>Notes:</Text>
+                            <Text style={styles.notesText}>{item.notes}</Text>
+                          </View>
+                        )}
+                      </Card.Content>
+                    </Card>
+                  </View>
+                );
+              }}
+              refreshing={refreshing}
+              onRefresh={loadMedications}
+              contentContainerStyle={styles.listContainer}
+            />
           </>
         )}
       </ScrollView>
@@ -561,6 +702,7 @@ function MedicationScreen() {
           onPress: () => setError(null),
         }}
         style={styles.snackbar}
+        duration={3000}
       >
         {error}
       </Snackbar>
@@ -597,6 +739,14 @@ const styles = StyleSheet.create({
     borderRadius: theme.roundness,
     ...theme.shadows.medium,
     backgroundColor: theme.colors.background,
+    borderLeftWidth: 4,
+    borderLeftColor: theme.colors.divider,
+  },
+  medicationCardTaken: {
+    borderLeftColor: theme.colors.success || '#4CAF50',
+  },
+  medicationCardNotTaken: {
+    borderLeftColor: theme.colors.error,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -610,6 +760,53 @@ const styles = StyleSheet.create({
   },
   cardActions: {
     flexDirection: 'row',
+    alignItems: 'center',
+  },
+  statusButtonsContainer: {
+    flexDirection: 'row',
+    marginRight: theme.spacing.xs,
+  },
+  statusButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: theme.colors.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: theme.colors.divider,
+    marginHorizontal: 2,
+  },
+  statusButtonActive: {
+    backgroundColor: theme.colors.success || '#4CAF50',
+    borderColor: theme.colors.success || '#4CAF50',
+  },
+  statusButtonNotTaken: {
+    backgroundColor: theme.colors.error,
+    borderColor: theme.colors.error,
+  },
+  statusIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: 4,
+    borderRadius: 12,
+    alignSelf: 'flex-start',
+    marginTop: theme.spacing.xs,
+    marginBottom: theme.spacing.sm,
+  },
+  statusText: {
+    color: '#fff',
+    ...theme.typography.medium,
+    fontSize: 12,
+    marginLeft: 4,
+  },
+  statusTimeText: {
+    color: '#fff',
+    ...theme.typography.regular,
+    fontSize: 10,
+    marginLeft: 4,
+    opacity: 0.8,
   },
   actionButton: {
     margin: -4,
@@ -706,7 +903,7 @@ const styles = StyleSheet.create({
     marginTop: theme.spacing.md,
   },
   snackbar: {
-    backgroundColor: theme.colors.error,
+    backgroundColor: theme.colors.primary,
   },
   frequencyContainer: {
     marginBottom: theme.spacing.md,
@@ -722,6 +919,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 4,
   },
+
   frequencyButton: {
     width: 36,
     height: 36,
@@ -771,6 +969,9 @@ const styles = StyleSheet.create({
   timeText: {
     ...theme.typography.regular,
     color: theme.colors.text,
+  },
+  listContainer: {
+    padding: theme.spacing.md,
   },
 });
 

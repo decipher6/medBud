@@ -1,4 +1,3 @@
-// At the top of the file, with your other imports
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, ScrollView, StyleSheet, RefreshControl, Text, TouchableOpacity, Image } from 'react-native';
 import { 
@@ -9,6 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useIsFocused } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { DatePickerModal } from 'react-native-paper-dates';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from '../services/api';
 import { theme } from '../theme/theme';
 import { useContext } from 'react';
@@ -37,8 +37,15 @@ function HomeScreen({ navigation }) {
     return `pending_medications_${userId}`;
   };
   
+  // Create a key for medication statuses
+  const getMedicationStatusesKey = () => {
+    const userId = getUserIdSafe();
+    return `medication_statuses_${userId}`;
+  };
+  
   const [recentSymptoms, setRecentSymptoms] = useState([]);
   const [medications, setMedications] = useState([]);
+  const [medicationStatuses, setMedicationStatuses] = useState({});
   const [searchQuery, setSearchQuery] = useState('');
   const [allSymptoms, setAllSymptoms] = useState([]);
   const [filteredSymptoms, setFilteredSymptoms] = useState([]);
@@ -54,8 +61,29 @@ function HomeScreen({ navigation }) {
   useEffect(() => {
     if (isFocused) {
       loadData();
+      loadMedicationStatuses();
     }
   }, [isFocused]);
+
+  const loadMedicationStatuses = async () => {
+    try {
+      const statusesKey = getMedicationStatusesKey();
+      const storedStatuses = await AsyncStorage.getItem(statusesKey);
+      if (storedStatuses) {
+        setMedicationStatuses(JSON.parse(storedStatuses));
+      }
+    } catch (error) {
+      console.error('Error loading medication statuses:', error);
+    }
+  };
+
+  const getMedicationStatus = (medicationId) => {
+    return medicationStatuses[medicationId]?.status || null;
+  };
+
+  const getMedicationStatusUpdateTime = (medicationId) => {
+    return medicationStatuses[medicationId]?.updatedAt || null;
+  };
 
   const loadData = async (refresh = false) => {
     try {
@@ -95,9 +123,6 @@ function HomeScreen({ navigation }) {
       setIsRefreshing(false);
     }
   };
-
-  // Add this function to your HomeScreen component
-// It should be added before the return statement
 
   const performSearch = async () => {
     try {
@@ -168,6 +193,7 @@ function HomeScreen({ navigation }) {
 
   const onRefresh = useCallback(() => {
     loadData(true);
+    loadMedicationStatuses();
   }, []);
 
   const onDismissDatePicker = useCallback(() => {
@@ -188,6 +214,13 @@ function HomeScreen({ navigation }) {
     if (numSeverity <= 3) return theme.severityColors.low;
     if (numSeverity <= 6) return theme.severityColors.medium;
     return theme.severityColors.high;
+  };
+
+  const getStatusColor = (status) => {
+    if (!status) return null;
+    return status === 'taken' 
+      ? theme.colors.success || '#4CAF50' 
+      : theme.colors.error;
   };
 
   const formatDateTime = (timestamp) => {
@@ -418,26 +451,55 @@ function HomeScreen({ navigation }) {
           <Card.Content>
             <Title style={styles.sectionTitle}>Your Medications</Title>
             {medications.length > 0 ? (
-              medications.map((med, index) => (
-                <View 
-                  key={med._id} 
-                  style={styles.medicationItem}
-                >
-                  <Title style={styles.medicationName}>{med.name || 'Unnamed Medication'}</Title>
-                  <View style={styles.medicationDetails}>
-                    <Chip icon="repeat" style={styles.medicationChip}>
-                      {med.frequency} times per day
-                    </Chip>
-                    {med.times && med.times.length > 0 && (
-                      <Chip icon="clock" style={styles.medicationChip}>
-                        {med.times.join(', ')}
+              medications.map((med, index) => {
+                const status = getMedicationStatus(med._id);
+                const statusUpdateTime = getMedicationStatusUpdateTime(med._id);
+                return (
+                  <View 
+                    key={med._id} 
+                    style={[
+                      styles.medicationItem,
+                      status === 'taken' && styles.medicationItemTaken,
+                      status === 'not_taken' && styles.medicationItemNotTaken
+                    ]}
+                  >
+                    <Title style={styles.medicationName}>{med.name || 'Unnamed Medication'}</Title>
+                    <View style={styles.medicationDetails}>
+                      <Chip icon="repeat" style={styles.medicationChip}>
+                        {med.frequency} times per day
                       </Chip>
+                      {med.times && med.times.length > 0 && (
+                        <Chip icon="clock" style={styles.medicationChip}>
+                          {med.times.join(', ')}
+                        </Chip>
+                      )}
+                      {/* Add status chip here */}
+                      {status && (
+                        <Chip 
+                          icon={status === 'taken' ? 'check' : 'close'} 
+                          style={[
+                            styles.medicationChip,
+                            { backgroundColor: getStatusColor(status) }
+                          ]}
+                        >
+                          <Text style={styles.statusChipText}>
+                            {status === 'taken' ? 'Taken' : 'Not Taken'}
+                          </Text>
+                        </Chip>
+                      )}
+                    </View>
+                    {med.notes && <Paragraph style={styles.details}>Notes: {med.notes}</Paragraph>}
+                    {statusUpdateTime && (
+                      <View style={styles.statusTimeContainer}>
+                        <Text style={styles.statusTimeText}>
+                          Status updated: {formatDateTime(statusUpdateTime)}
+                        </Text>
+                      </View>
                     )}
+                    {index < medications.length - 1 && <Divider style={styles.itemDivider} />}
                   </View>
-                  {med.notes && <Paragraph style={styles.details}>Notes: {med.notes}</Paragraph>}
-                  {index < medications.length - 1 && <Divider style={styles.itemDivider} />}
-                </View>
-              ))
+                );
+              })
             ) : (
               <View style={styles.emptyStateContainer}>
                 <Ionicons name="medkit-outline" size={48} color={theme.colors.disabled} />
@@ -566,7 +628,7 @@ const styles = StyleSheet.create({
   },
   searchButton: {
     flex: 3,
-    marginRight: searchPerformed => searchPerformed ? theme.spacing.sm : 0,
+    marginRight: theme.spacing.sm,
   },
   resetButton: {
     flex: 1,
@@ -639,6 +701,15 @@ const styles = StyleSheet.create({
   },
   medicationItem: {
     marginBottom: theme.spacing.sm,
+    borderLeftWidth: 3,
+    borderLeftColor: theme.colors.divider,
+    paddingLeft: theme.spacing.sm,
+  },
+  medicationItemTaken: {
+    borderLeftColor: theme.colors.success || '#4CAF50',
+  },
+  medicationItemNotTaken: {
+    borderLeftColor: theme.colors.error,
   },
   medicationName: {
     ...theme.typography.medium,
@@ -654,6 +725,18 @@ const styles = StyleSheet.create({
     marginRight: theme.spacing.sm,
     marginBottom: theme.spacing.xs,
     backgroundColor: theme.colors.surface,
+  },
+  statusChipText: {
+    color: '#fff',
+    fontSize: 12,
+  },
+  statusTimeContainer: {
+    marginTop: theme.spacing.xs,
+  },
+  statusTimeText: {
+    ...theme.typography.caption,
+    color: theme.colors.disabled,
+    fontStyle: 'italic',
   },
   loadingContainer: {
     flex: 1,

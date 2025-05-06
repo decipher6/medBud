@@ -324,6 +324,40 @@ export const NotificationService = {
     }
   },
 
+  // In src/services/notifications.js
+
+  // In src/services/notifications.js
+// Add this import at the top if not already present
+
+// Add this function to the NotificationService object
+async storeLocalMedicationStatus(medicationId, userId, status) {
+  try {
+    // Create a key specific to this user
+    const statusKey = `medication_statuses_${userId}`;
+    
+    // Get existing statuses
+    const existingStatusesJson = await AsyncStorage.getItem(statusKey);
+    const existingStatuses = existingStatusesJson ? JSON.parse(existingStatusesJson) : {};
+    
+    // Update with new status
+    existingStatuses[medicationId] = {
+      status,
+      updatedAt: new Date().toISOString()
+    };
+    
+    // Save back to storage
+    await AsyncStorage.setItem(statusKey, JSON.stringify(existingStatuses));
+    
+    console.log(`Stored local status for medication ${medicationId}: ${status}`);
+    return true;
+  } catch (error) {
+    console.error('Error storing medication status:', error);
+    return false;
+  }
+},
+
+// Then modify these functions:
+
   async markMedicationAsTaken(notificationId) {
     if (Platform.OS === 'web') {
       console.log('Notifications are not supported on web platform');
@@ -338,17 +372,12 @@ export const NotificationService = {
         return { success: false, message: 'Notification data not found' };
       }
 
-      const medication = await api.getMedications(notificationData.userId);
-      const currentMed = medication.find((m) => m._id === notificationData.medicationId);
-
-      if (!currentMed) {
-        return { success: false, message: 'Medication not found' };
-      }
-
-      await api.updateMedication(notificationData.medicationId, {
-        ...currentMed,
-        lastTaken: new Date().toISOString(),
-      }, notificationData.userId);
+      // Store status locally
+      await this.storeLocalMedicationStatus(
+        notificationData.medicationId,
+        notificationData.userId,
+        'taken'
+      );
 
       // Remove from queue
       notificationQueue.queue = notificationQueue.queue.filter(
@@ -358,7 +387,7 @@ export const NotificationService = {
 
       return { 
         success: true,
-        message: `${currentMed.name} marked as taken. Next reminder will be at ${notificationData.time} tomorrow.`
+        message: `Medication marked as taken. Next reminder will be at the same time tomorrow.`
       };
     } catch (error) {
       console.error('Error marking medication as taken:', error);
@@ -380,17 +409,12 @@ export const NotificationService = {
         return { success: false, message: 'Notification data not found' };
       }
 
-      const medication = await api.getMedications(notificationData.userId);
-      const currentMed = medication.find((m) => m._id === notificationData.medicationId);
-
-      if (!currentMed) {
-        return { success: false, message: 'Medication not found' };
-      }
-
-      await api.updateMedication(notificationData.medicationId, {
-        ...currentMed,
-        lastMissed: new Date().toISOString(),
-      }, notificationData.userId);
+      // Store status locally
+      await this.storeLocalMedicationStatus(
+        notificationData.medicationId,
+        notificationData.userId,
+        'not_taken'
+      );
 
       // Remove from queue
       notificationQueue.queue = notificationQueue.queue.filter(
@@ -400,7 +424,7 @@ export const NotificationService = {
 
       return { 
         success: true,
-        message: `${currentMed.name} marked as missed. Next reminder will be at ${notificationData.time} tomorrow.`
+        message: `Medication marked as not taken. Next reminder will be at the same time tomorrow.`
       };
     } catch (error) {
       console.error('Error marking medication as missed:', error);

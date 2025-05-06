@@ -2,8 +2,11 @@ import React, { useEffect } from 'react';
 import { Alert, Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { NotificationService } from '../services/notifications';
+import { useMedication } from '../context/MedicationContext';
 
 export default function NotificationHandler() {
+  const { updateMedicationStatus } = useMedication();
+
   useEffect(() => {
     const setupResult = setupNotifications();
     return () => {
@@ -77,47 +80,52 @@ export default function NotificationHandler() {
 
       // Set up notification response handler
       const subscription = Notifications.addNotificationResponseReceivedListener(async (response) => {
-        const { notification } = response;
-        const { data } = notification.request.content;
+        const { actionId, notification } = response;
+        const medicationId = notification.request.content.data.medicationId;
         
-        if (data.type === 'medication-reminder') {
-          const actionIdentifier = response.actionIdentifier;
-          let result;
-          
-          switch (actionIdentifier) {
-            case 'mark-taken':
-            case Notifications.DEFAULT_ACTION_IDENTIFIER + 'mark-taken': // For better cross-platform support
-              result = await NotificationService.markMedicationAsTaken(notification.request.identifier);
-              if (result.success) {
-                Alert.alert('Medication Status', result.message);
-              } else {
-                Alert.alert('Error', result.message || 'Failed to mark medication as taken');
+        switch (actionId) {
+          case 'mark-taken':
+            try {
+              // Update status in context
+              const success = await updateMedicationStatus(medicationId, 'taken');
+              if (success) {
+                // Store status locally
+                await storeLocalMedicationStatus(medicationId, 'taken');
+                // Update backend
+                await markMedicationAsTaken(medicationId);
               }
-              break;
-            case 'snooze':
-            case Notifications.DEFAULT_ACTION_IDENTIFIER + 'snooze': // For better cross-platform support
-              result = await NotificationService.snoozeNotification(notification.request.identifier);
-              if (result.success) {
-                Alert.alert('Snooze', result.message);
-              } else {
-                Alert.alert('Error', result.message || 'Failed to snooze medication');
+            } catch (error) {
+              console.error('Error marking medication as taken:', error);
+            }
+            break;
+          case 'mark-missed':
+            try {
+              // Update status in context
+              const success = await updateMedicationStatus(medicationId, 'not_taken');
+              if (success) {
+                // Store status locally
+                await storeLocalMedicationStatus(medicationId, 'not_taken');
+                // Update backend
+                await markMedicationAsMissed(medicationId);
               }
-              break;
-            case 'mark-missed':
-            case Notifications.DEFAULT_ACTION_IDENTIFIER + 'mark-missed': // For better cross-platform support
-              result = await NotificationService.markMedicationAsMissed(notification.request.identifier);
-              if (result.success) {
-                Alert.alert('Medication Status', result.message);
-              } else {
-                Alert.alert('Error', result.message || 'Failed to mark medication as missed');
-              }
-              break;
-            default:
-              // Handle default tap - show the dialog with options
-              console.log('Default tap detected with action:', actionIdentifier);
-              showMedicationReminderDialog(notification);
-              break;
-          }
+            } catch (error) {
+              console.error('Error marking medication as missed:', error);
+            }
+            break;
+          case 'snooze':
+          case Notifications.DEFAULT_ACTION_IDENTIFIER + 'snooze': // For better cross-platform support
+            const result = await NotificationService.snoozeNotification(notification.request.identifier);
+            if (result.success) {
+              Alert.alert('Snooze', result.message);
+            } else {
+              Alert.alert('Error', result.message || 'Failed to snooze medication');
+            }
+            break;
+          default:
+            // Handle default tap - show the dialog with options
+            console.log('Default tap detected with action:', actionId);
+            showMedicationReminderDialog(notification);
+            break;
         }
       });
 
@@ -150,6 +158,7 @@ export default function NotificationHandler() {
           onPress: async () => {
             const result = await NotificationService.markMedicationAsTaken(notification.request.identifier);
             if (result.success) {
+              updateMedicationStatus(data.medicationId, 'taken');
               Alert.alert('Medication Status', result.message);
             } else {
               Alert.alert('Error', result.message || 'Failed to mark medication as taken');
@@ -172,6 +181,7 @@ export default function NotificationHandler() {
           onPress: async () => {
             const result = await NotificationService.markMedicationAsMissed(notification.request.identifier);
             if (result.success) {
+              updateMedicationStatus(data.medicationId, 'not_taken');
               Alert.alert('Medication Status', result.message);
             } else {
               Alert.alert('Error', result.message || 'Failed to mark medication as missed');

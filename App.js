@@ -1,13 +1,16 @@
-// App.js with proper user context
+// App.js with proper user context and web notification support
 import React, { useState, useEffect, createContext } from 'react';
-import { StatusBar, View, Text, TouchableOpacity, Alert } from 'react-native';
+import { StatusBar, View, Text, TouchableOpacity, Alert, Platform } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 import { Provider as PaperProvider } from 'react-native-paper';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+
+// Notification Handlers
 import NotificationHandler from './src/components/NotificationHandler';
+import WebNotificationHandler from './src/components/WebNotificationHandler';
 
 // Screens
 import SplashScreen from './src/screens/SplashScreen';
@@ -23,6 +26,9 @@ import { getCurrentUser, logout } from './src/services/authService';
 
 // Theme
 import { theme } from './src/theme/theme';
+
+// Medication Provider
+import { MedicationProvider } from './src/context/MedicationContext';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -197,24 +203,30 @@ export default function App() {
 
   return (
     <UserContext.Provider value={{ user, setUser, getUserId }}>
-      <PaperProvider theme={theme}>
-        <SafeAreaProvider>
-          <StatusBar barStyle="dark-content" backgroundColor={theme.colors.background} />
-          <NavigationContainer theme={theme}>
-            <NotificationHandler />
-            <Stack.Navigator
-              initialRouteName={user ? "MainApp" : "Splash"}
-              screenOptions={{
-                headerShown: false,
-              }}
-            >
-              <Stack.Screen name="Splash" component={SplashScreen} />
-              <Stack.Screen name="Auth" component={AuthStack} />
-              <Stack.Screen name="MainApp" component={MainApp} />
-            </Stack.Navigator>
-          </NavigationContainer>
-        </SafeAreaProvider>
-      </PaperProvider>
+      <MedicationProvider>
+        <PaperProvider theme={theme}>
+          <SafeAreaProvider>
+            <StatusBar barStyle="dark-content" backgroundColor={theme.colors.background} />
+            <NavigationContainer theme={theme}>
+              {Platform.OS === 'web' ? (
+                <WebNotificationHandler />
+              ) : (
+                <NotificationHandler />
+              )}
+              <Stack.Navigator
+                initialRouteName={user ? "MainApp" : "Splash"}
+                screenOptions={{
+                  headerShown: false,
+                }}
+              >
+                <Stack.Screen name="Splash" component={SplashScreen} />
+                <Stack.Screen name="Auth" component={AuthStack} />
+                <Stack.Screen name="MainApp" component={MainApp} />
+              </Stack.Navigator>
+            </NavigationContainer>
+          </SafeAreaProvider>
+        </PaperProvider>
+      </MedicationProvider>
     </UserContext.Provider>
   );
 }

@@ -104,6 +104,23 @@ export const api = {
     return true;
   },
 
+  async incrementMedicationAdherence(medicationId) {
+    const response = await fetch(`${BASE_URL}/api/medications/increment-adherence?medication_id=${medicationId}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      }
+    });
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.message || `HTTP error! status: ${response.status}`);
+    }
+    
+    return data;
+  },
+
   // Reports
   async generateReport(userId, startDate = null, endDate = null, format = 'summary') {
     let url = `${BASE_URL}/api/reports/${userId}`;

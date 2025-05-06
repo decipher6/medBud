@@ -32,6 +32,7 @@
     "react-native": "0.76.7",
     "react-native-blob-util": "^0.19.6",
     "react-native-chart-kit": "^6.12.0",
+    "react-native-event-listeners": "^1.0.7",
     "react-native-gesture-handler": "^2.25.0",
     "react-native-paper": "^5.13.1",
     "react-native-paper-dates": "^0.22.40",
